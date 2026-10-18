@@ -7,6 +7,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
 import { createChannel, SimChannel } from "./photon.js";
 import { SCENES, ALERT_TYPES, INDICES } from "../web/js/config.js";
 import { assess, centroid, fieldsWithin, miles, valueAt, activeAlerts } from "../web/js/analysis.js";
@@ -18,6 +19,45 @@ const STATE_FILE = path.join(ROOT, "state.json");
 const PORT = Number(process.env.PORT || 8787);
 const STATUS_SCENE = 4; // last in-season pass (Aug 20); the Oct 2 scene is mid-harvest
 const DEFAULT_RADIUS = 2;
+
+/* ---------------------------------------------------------------- abuse protection */
+// 1) Only this laptop may call the agent's HTTP API (not other devices on the Wi-Fi).
+const isLoopback = (addr) => addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+// 2) Only our own pages may call it from a browser: this laptop, plus the GitHub Pages site
+//    (derived from the git remote) and anything listed in ALLOWED_ORIGINS.
+function pagesOrigin() {
+  try {
+    const url = execSync("git remote get-url origin", { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+    const m = url.match(/github\.com[:/]([^/]+)\//i);
+    return m ? [`https://${m[1].toLowerCase()}.github.io`] : [];
+  } catch { return []; }
+}
+const ALLOWED_ORIGINS = new Set([
+  `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`, "http://localhost:5173",
+  ...(process.env.ALLOWED_ORIGINS || "").split(",").map((o) => o.trim().replace(/\/+$/, "")).filter(Boolean),
+  ...pagesOrigin(),
+]);
+// 3) Invite-only texting: when ALLOWED_PHONES is set, other numbers get one polite reply and are ignored.
+const normPhone = (p) => String(p ?? "").replace(/[^\d+]/g, "");
+const ALLOWED_PHONES = new Set((process.env.ALLOWED_PHONES || "").split(",").map(normPhone).filter(Boolean));
+const phoneAllowed = (p) => ALLOWED_PHONES.size === 0 || ALLOWED_PHONES.has(normPhone(p));
+const deniedAt = new Map();      // phone -> last "invite-only" reply, so strangers can't trigger a reply loop
+const reportTimes = new Map();   // phone -> recent report timestamps
+const REPORTS_PER_HOUR = 3;
+function allowReport(phone) {
+  const now = Date.now();
+  const recent = (reportTimes.get(phone) || []).filter((t) => now - t < 3600e3);
+  const ok = recent.length < REPORTS_PER_HOUR;
+  if (ok) recent.push(now);
+  reportTimes.set(phone, recent);
+  return ok;
+}
+// Alert text goes to other farmers' phones, so strip links and control characters.
+const cleanNote = (s) => String(s ?? "")
+  .replace(/[\u0000-\u001f\u007f]/g, " ")
+  .replace(/\b(?:https?:\/\/|www\.)\S+/gi, "[link removed]")
+  .replace(/\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|co|ly|me|xyz|info|biz|app|link|site|top|gg|ru|cn|tk)\b\S*/gi, "[link removed]")
+  .slice(0, 280).trim();
 
 const fields = JSON.parse(fs.readFileSync(path.join(WEB, "data", "farms.geojson"), "utf8")).features;
 const byId = new Map(fields.map((f) => [f.properties.id, f]));
@@ -38,6 +78,15 @@ async function handleInbound({ from, text, thread, via = channel }) {
   text = (text || "").trim();
   if (!from || !text) return [];
   log(`[in] ${from}: ${text}`);
+  // The local phone simulator is exempt: it's only reachable from this laptop.
+  if (via !== sim && !phoneAllowed(from)) {
+    if (Date.now() - (deniedAt.get(from) || 0) > 12 * 3600e3) {
+      deniedAt.set(from, Date.now());
+      await via.send({ ...thread, phone: from }, "This Farmers for Farmers pilot is invite-only right now. Ask the team to add your number.").catch(() => {});
+    }
+    log("[in] ignored: number not on the allowlist");
+    return [];
+  }
   const sub = state.subscribers[from];
   const replies = [];
   const reply = async (msg) => {
@@ -81,6 +130,7 @@ async function handleInbound({ from, text, thread, via = channel }) {
       break;
     case "REPORT": {
       if (!sub) { await reply(notJoined()); break; }
+      if (!allowReport(from)) { await reply(`You've sent ${REPORTS_PER_HOUR} reports in the last hour. Please wait a bit before sending another.`); break; }
       const named = (arg.toUpperCase().match(/\bF(\d{1,2})\b/) || [])[1];
       const fieldId = named && sub.fieldIds.includes(`F${named.padStart(2, "0")}`) ? `F${named.padStart(2, "0")}` : sub.fieldIds[0];
       const note = arg.replace(/\bF\d{1,2}\b\s*/i, "").trim();
@@ -94,7 +144,10 @@ async function handleInbound({ from, text, thread, via = channel }) {
       break;
     default: {
       if (!sub) { await reply(notJoined()); break; }
-      const answer = await askClaude({ text, sub, context: contextFor(sub), report: (type, note) => createAlert({ type, note, radiusMi: DEFAULT_RADIUS, fieldId: sub.fieldIds[0], reporterId: sub.farmerId, reporterName: sub.name, source: "sms" }) });
+      const answer = await askClaude({ text, sub, context: contextFor(sub), report: (type, note) => {
+        if (!allowReport(from)) throw new Error("report limit reached for this hour");
+        return createAlert({ type, note, radiusMi: DEFAULT_RADIUS, fieldId: sub.fieldIds[0], reporterId: sub.farmerId, reporterName: sub.name, source: "sms" });
+      } });
       await reply(answer ?? "I didn't catch that. Text HELP for commands, or REPORT + what you're seeing to warn your neighbors.");
     }
   }
@@ -157,7 +210,7 @@ async function createAlert({ type, note = "", radiusMi = DEFAULT_RADIUS, fieldId
   if (!field) throw new Error(`Unknown field ${fieldId}`);
   if (!ALERT_TYPES[type]) type = "pest";
   const alert = {
-    id: `A${Date.now().toString(36)}`, type, note: String(note).slice(0, 280), radiusMi: Math.min(10, Math.max(0.5, +radiusMi || DEFAULT_RADIUS)),
+    id: `A${Date.now().toString(36)}`, type, note: cleanNote(note), radiusMi: Math.min(10, Math.max(0.5, +radiusMi || DEFAULT_RADIUS)),
     fieldId, reporterId, reporterName, source, center: center ?? centroid(field), createdAt: new Date().toISOString(), notified: [],
   };
   state.alerts.unshift(alert);
@@ -203,7 +256,10 @@ function advice(type) {
 const mask = (p) => (p?.startsWith("+") ? `${p.slice(0, -4).replace(/\d/g, "•")}${p.slice(-4)}` : "simulated");
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  if (!isLoopback(req.socket.remoteAddress)) return res.writeHead(403).end("forbidden: local access only");
+  const origin = req.headers.origin;
+  if (origin && !ALLOWED_ORIGINS.has(origin)) return res.writeHead(403).end("forbidden: origin not allowed");
+  if (origin) { res.setHeader("Access-Control-Allow-Origin", origin); res.setHeader("Vary", "Origin"); }
   res.setHeader("Access-Control-Allow-Headers", "content-type");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Private-Network", "true");
@@ -255,6 +311,8 @@ function serveStatic(p, res) {
 }
 
 server.listen(PORT, () => {
+  log(`Accepting browser requests from: ${[...ALLOWED_ORIGINS].join(", ")}`);
+  log(ALLOWED_PHONES.size ? `Texting is invite-only: ${ALLOWED_PHONES.size} allowed number(s)` : "Texting is open to any number (set ALLOWED_PHONES in agent/.env to restrict)");
   log(`Farmers for Farmers agent on http://localhost:${PORT}  (map: /, phone simulator: /phone.html)`);
   channel.start();
 });
