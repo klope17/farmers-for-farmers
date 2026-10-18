@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Farmers for Farmers</title>
+  <meta name="description" content="A community crop-health map. Satellite, drone and soil-sensor data, with neighbor alerts for pests, drought and nutrient problems." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231e8e3e' d='M12 2C8 6 6 9.5 6 13a6 6 0 0 0 12 0c0-3.5-2-7-6-11z'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=swap" rel="stylesheet" />
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <link href="css/app.css" rel="stylesheet" />
+</head>
+<body>
+  <div id="map" aria-label="Farm map"></div>
+
+  <!-- Search box + chips (top-left), like Google Maps -->
+  <header class="topbar">
+    <div class="search" role="search">
+      <button class="icon-btn" id="menuBtn" aria-label="Menu"><span class="ms">menu</span></button>
+      <input id="searchInput" type="search" placeholder="Search any US farm, town or county" autocomplete="off" aria-label="Search" />
+      <button class="icon-btn" id="searchBtn" aria-label="Search"><span class="ms">search</span></button>
+      <div class="search-results" id="searchResults" role="listbox" hidden></div>
+    </div>
+    <nav class="chips" id="layerChips" aria-label="Map layers">
+      <button class="chip" data-index="ndvi" aria-pressed="true"><span class="ms">eco</span>Crop health</button>
+      <button class="chip" data-index="ndre" aria-pressed="false"><span class="ms">science</span>Nitrogen</button>
+      <button class="chip" data-index="ndmi" aria-pressed="false"><span class="ms">water_drop</span>Moisture</button>
+      <button class="chip" data-index="none" aria-pressed="false"><span class="ms">photo_camera</span>Aerial photo</button>
+      <a class="chip" href="compare.html" style="text-decoration:none"><span class="ms">flight</span>Drone vs satellite</a>
+      <button class="chip chip-alert" id="alertsChip" aria-pressed="false"><span class="ms">notifications_active</span>Alerts<span class="chip-badge" id="alertsChipBadge" hidden>0</span></button>
+    </nav>
+  </header>
+
+  <!-- Top-right: agent status, persona, notifications -->
+  <div class="top-right">
+    <button class="pill" id="agentPill" title="Text-message agent status">
+      <span class="dot" id="agentDot"></span><span id="agentLabel">Texting agent</span>
+    </button>
+    <button class="icon-btn raised" id="bellBtn" aria-label="Notifications">
+      <span class="ms">notifications</span><span class="badge" id="bellBadge" hidden>0</span>
+    </button>
+    <button class="avatar" id="personaBtn" aria-label="Switch farmer" title="Viewing as…">R</button>
+    <div class="menu" id="personaMenu" hidden></div>
+  </div>
+
+  <!-- Left place panel -->
+  <aside class="panel" id="panel" aria-live="polite" hidden>
+    <div class="panel-scroll" id="panelBody"></div>
+    <button class="panel-collapse" id="panelClose" aria-label="Close panel"><span class="ms">chevron_left</span></button>
+  </aside>
+
+  <!-- Notifications drawer -->
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <h2>Alerts near you</h2>
+      <button class="icon-btn" id="drawerClose" aria-label="Close"><span class="ms">close</span></button>
+    </div>
+    <div class="drawer-list" id="alertList"></div>
+  </aside>
+
+  <!-- Bottom-left: layer switcher -->
+  <button class="layers-btn" id="baseToggle" aria-label="Switch base map">
+    <span class="layers-thumb" id="baseThumb"></span>
+    <span class="layers-label"><span class="ms">layers</span><span id="baseLabel">Map</span></span>
+  </button>
+
+  <!-- Bottom-center: imagery date timeline + legend -->
+  <div class="timeline" id="timeline">
+    <div class="legend" id="legend"></div>
+    <div class="dates" id="dates" role="tablist" aria-label="Imagery date"></div>
+  </div>
+
+  <!-- Bottom-right: map controls -->
+  <div class="map-ctrls">
+    <button class="icon-btn raised" id="sensorBtn" aria-label="Field sensor" title="Connect field sensor"><span class="ms">sensors</span></button>
+    <button class="icon-btn raised" id="homeBtn" aria-label="Recenter" title="Recenter"><span class="ms">my_location</span></button>
+    <div class="zoom raised">
+      <button class="icon-btn" id="zoomIn" aria-label="Zoom in"><span class="ms">add</span></button>
+      <button class="icon-btn" id="zoomOut" aria-label="Zoom out"><span class="ms">remove</span></button>
+    </div>
+  </div>
+
+  <!-- Report dialog -->
+  <dialog id="reportDialog" class="dialog">
+    <form method="dialog" id="reportForm">
+      <h2><span class="ms">campaign</span>Warn your neighbors</h2>
+      <p class="muted" id="reportField"></p>
+      <label class="field-label">What's happening?</label>
+      <div class="seg" id="reportType">
+        <label><input type="radio" name="type" value="pest" checked /><span><span class="ms">pest_control</span>Pests</span></label>
+        <label><input type="radio" name="type" value="disease" /><span><span class="ms">coronavirus</span>Disease</span></label>
+        <label><input type="radio" name="type" value="drought" /><span><span class="ms">wb_sunny</span>Drought</span></label>
+        <label><input type="radio" name="type" value="nutrient" /><span><span class="ms">science</span>Nutrient</span></label>
+        <label><input type="radio" name="type" value="flood" /><span><span class="ms">flood</span>Flooding</span></label>
+      </div>
+      <label class="field-label" for="reportNote">Details (optional)</label>
+      <input id="reportNote" class="text-input" placeholder="e.g. Soybean aphids, ~250 per plant on the east edge" />
+      <label class="field-label" for="reportRadius">Notify farms within <b id="radiusOut">2</b> miles</label>
+      <input id="reportRadius" type="range" min="0.5" max="5" step="0.5" value="2" />
+      <p class="muted small" id="reportReach"></p>
+      <div class="dialog-actions">
+        <button class="btn text" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn filled" value="send" id="reportSend"><span class="ms">send</span>Send alert</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Sensor sheet -->
+  <dialog id="sensorDialog" class="dialog">
+    <div>
+      <h2><span class="ms">sensors</span>Field sensor</h2>
+      <p class="muted">Plug the Arduino into this computer over USB, then connect it (Chrome or Edge). Close the Arduino IDE Serial Monitor first, since only one app can use the port.</p>
+      <div class="sensor-live" id="sensorLive">
+        <div class="gauge"><svg viewBox="0 0 120 70" aria-hidden="true"><path d="M10 64 A50 50 0 0 1 110 64" class="gauge-track"/><path d="M10 64 A50 50 0 0 1 110 64" class="gauge-fill" id="gaugeFill"/></svg>
+          <div class="gauge-val"><b id="moistVal">--</b><span id="gaugeLabel">% air humidity</span></div></div>
+        <div class="sensor-stats">
+          <div><span class="ms">thermostat</span><b id="tempVal">--</b><span>air °C</span></div>
+          <div id="humRow"><span class="ms">humidity_percentage</span><b id="humVal">--</b><span>air RH %</span></div>
+          <div><span class="ms" id="thirdIcon">light_mode</span><b id="rawVal">--</b><span id="thirdLabel">light (0–1023)</span></div>
+        </div>
+        <svg class="spark" id="sensorSpark" viewBox="0 0 300 50" preserveAspectRatio="none" aria-hidden="true"></svg>
+      </div>
+      <label class="field-label" for="riskAt">Disease-risk alert at <b id="riskOut">75</b>% humidity</label>
+      <input id="riskAt" type="range" min="55" max="90" step="1" value="75" />
+      <label class="field-label" for="sensorField">Sensor is in field</label>
+      <select id="sensorField" class="text-input"></select>
+      <p class="muted small" id="sensorStatus">Not connected</p>
+      <p class="small raw-line">Arduino says: <code id="sensorRaw">nothing yet</code></p>
+      <div class="dialog-actions">
+        <button class="btn text" id="sensorSim">Use demo sensor</button>
+        <button class="btn text" id="sensorDisconnect" hidden>Disconnect</button>
+        <button class="btn tonal" id="sensorClose">Close</button>
+        <button class="btn filled" id="sensorConnect"><span class="ms">usb</span>Connect</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="zoom-hint" id="zoomHint" hidden><span class="ms">zoom_in</span>Zoom in to see USDA field boundaries anywhere in the US</div>
+
+  <div class="snackbar" id="snackbar" role="status" hidden></div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

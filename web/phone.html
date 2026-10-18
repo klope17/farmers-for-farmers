@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Farmer's Phone</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root { --bg: #f2f2f7; --card: #fff; --me: #0b84fe; --them: #e9e9eb; --text: #000; --muted: #6e6e73; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #000; --card: #1c1c1e; --them: #26252a; --text: #fff; --muted: #98989f; color-scheme: dark; } }
+    :root[data-theme="dark"] { --bg: #000; --card: #1c1c1e; --them: #26252a; --text: #fff; --muted: #98989f; color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.35 -apple-system, "SF Pro Text", Roboto, system-ui, sans-serif; background: var(--bg); color: var(--text); display: grid; place-items: center; min-height: 100vh; }
+    .phone { width: min(390px, 100vw); height: min(780px, 100vh); background: var(--card); border-radius: 40px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+    @media (max-width: 420px) { .phone { border-radius: 0; height: 100vh; } }
+    header { padding: 18px 16px 10px; text-align: center; border-bottom: 1px solid color-mix(in srgb, var(--muted) 30%, transparent); }
+    .av { width: 44px; height: 44px; border-radius: 50%; margin: 0 auto 4px; background: linear-gradient(135deg, #34c759, #1e8e3e); display: grid; place-items: center; color: #fff; font-size: 22px; }
+    header b { font-weight: 500; font-size: 13px; }
+    header label { display: block; font-size: 12px; color: var(--muted); margin-top: 6px; }
+    header input { font: inherit; font-size: 12px; width: 140px; text-align: center; border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent); border-radius: 8px; padding: 2px 6px; background: transparent; color: var(--text); }
+    main { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+    .b { max-width: 78%; padding: 8px 12px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; font-size: 15px; }
+    .me { align-self: flex-end; background: var(--me); color: #fff; border-bottom-right-radius: 6px; }
+    .them { align-self: flex-start; background: var(--them); border-bottom-left-radius: 6px; }
+    .hint { color: var(--muted); font-size: 12px; text-align: center; margin: 8px 0; }
+    form { display: flex; gap: 8px; padding: 10px 12px 22px; }
+    form input { flex: 1; font: inherit; border-radius: 20px; border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent); padding: 8px 14px; background: transparent; color: var(--text); }
+    form button { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--me); color: #fff; font-size: 18px; cursor: pointer; }
+    .quick { display: flex; gap: 6px; padding: 0 12px; flex-wrap: wrap; }
+    .quick button { font: inherit; font-size: 12px; border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent); border-radius: 14px; padding: 3px 10px; background: transparent; color: var(--me); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <header>
+      <div class="av">🌱</div>
+      <b>Farmers for Farmers</b>
+      <label>Simulated phone: <input id="num" value="+15155550199" /></label>
+    </header>
+    <main id="log"><div class="hint">Phone simulator. Texts go to the local agent, just like iMessage through Photon.</div></main>
+    <div class="quick">
+      <button data-t="JOIN F05">JOIN F05</button><button data-t="STATUS">STATUS</button><button data-t="ALERTS">ALERTS</button>
+      <button data-t="REPORT Japanese beetles clipping silks on the east edge">REPORT beetles</button>
+    </div>
+    <form id="f"><input id="t" placeholder="Text Message" autocomplete="off" /><button aria-label="Send">↑</button></form>
+  </div>
+<script>
+  const agent = new URLSearchParams(location.search).get("agent") || (location.port === "8787" ? "" : "http://localhost:8787");
+  const log = document.getElementById("log"), num = document.getElementById("num");
+  let after = 0;
+  try { num.value = localStorage.getItem("f4f.simPhone") || num.value; } catch {}
+  num.onchange = () => { try { localStorage.setItem("f4f.simPhone", num.value); } catch {} log.innerHTML = ""; after = 0; };
+  function bubble(text, who) {
+    const d = document.createElement("div"); d.className = `b ${who}`; d.textContent = text; log.append(d); log.scrollTop = log.scrollHeight;
+  }
+  async function send(text) {
+    bubble(text, "me");
+    try {
+      await fetch(`${agent}/api/sim/inbound`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: num.value, text }) });
+      poll();
+    } catch { bubble("⚠️ Agent not reachable. Run `npm run agent`.", "them"); }
+  }
+  async function poll() {
+    try {
+      const msgs = await fetch(`${agent}/api/sim/outbox?phone=${encodeURIComponent(num.value)}&after=${after}`).then((r) => r.json());
+      for (const m of msgs) { bubble(m.text, "them"); after = Math.max(after, m.id); }
+    } catch {}
+  }
+  document.getElementById("f").onsubmit = (e) => { e.preventDefault(); const t = document.getElementById("t"); if (t.value.trim()) send(t.value.trim()); t.value = ""; };
+  document.querySelectorAll(".quick button").forEach((b) => (b.onclick = () => send(b.dataset.t)));
+  setInterval(poll, 1500);
+</script>
+</body>
+</html>

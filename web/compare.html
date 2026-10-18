@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Drone vs Satellite</title>
+  <meta name="description" content="The same field at 7 cm (drone), 3 m and 10 m (free satellite) resolution, on the same NDVI color scale." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --primary: #1a73e8; --on-primary: #fff; --primary-container: #d3e3fd; --on-primary-container: #041e49;
+      --surface: #fff; --surface-2: #f8fafd; --surface-3: #f1f3f4; --on-surface: #1f1f1f; --on-surface-var: #444746;
+      --outline: #c4c7c5; --outline-var: #e3e3e3; --shadow: 0 1px 2px rgba(60,64,67,.3), 0 2px 6px 2px rgba(60,64,67,.15);
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+      --primary: #a8c7fa; --on-primary: #062e6f; --primary-container: #0842a0; --on-primary-container: #d3e3fd;
+      --surface: #1f1f1f; --surface-2: #28292a; --surface-3: #131314; --on-surface: #e3e3e3; --on-surface-var: #c4c7c5;
+      --outline: #8e918f; --outline-var: #444746; --shadow: 0 2px 8px rgba(0,0,0,.6); color-scheme: dark; } }
+    :root[data-theme="dark"] {
+      --primary: #a8c7fa; --on-primary: #062e6f; --primary-container: #0842a0; --on-primary-container: #d3e3fd;
+      --surface: #1f1f1f; --surface-2: #28292a; --surface-3: #131314; --on-surface: #e3e3e3; --on-surface-var: #c4c7c5;
+      --outline: #8e918f; --outline-var: #444746; --shadow: 0 2px 8px rgba(0,0,0,.6); color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--surface-3); color: var(--on-surface); font: 15px/22px Roboto, system-ui, sans-serif; }
+    .ms { font-family: "Material Symbols Rounded"; font-size: 20px; line-height: 1; font-weight: normal; font-style: normal; display: inline-block; -webkit-font-feature-settings: "liga"; font-feature-settings: "liga"; }
+    a { color: var(--primary); }
+    header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--surface); box-shadow: var(--shadow); position: sticky; top: 0; z-index: 3; }
+    header h1 { font-size: 20px; font-weight: 400; margin: 0; flex: 1; }
+    .icon-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--on-surface-var); text-decoration: none; }
+    .icon-btn:hover { background: color-mix(in srgb, var(--on-surface) 8%, transparent); }
+    main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+    .card { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .chip { height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--outline); background: transparent; color: var(--on-surface); font: 500 14px Roboto, sans-serif; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .chip[aria-pressed="true"] { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+    .chip .ms { font-size: 18px; }
+    .viewer { position: relative; border-radius: 12px; overflow: hidden; background: #fff; user-select: none; touch-action: none; cursor: ew-resize; }
+    .viewer img { display: block; width: 100%; height: auto; image-rendering: pixelated; pointer-events: none; -webkit-user-drag: none; user-select: none; }
+    .viewer .top { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--cut, 50%)); }
+    .viewer .top img { width: 100%; height: 100%; }
+    .handle { position: absolute; top: 0; bottom: 0; left: var(--cut, 50%); width: 3px; margin-left: -1.5px; background: #fff; box-shadow: 0 0 6px rgba(0,0,0,.5); pointer-events: none; }
+    .handle::after { content: "⟷"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; background: #fff; color: #1f1f1f; display: grid; place-items: center; font-size: 18px; box-shadow: 0 1px 6px rgba(0,0,0,.4); }
+    .tag { position: absolute; top: 12px; padding: 4px 10px; border-radius: 6px; background: rgba(0,0,0,.66); color: #fff; font-size: 13px; font-weight: 500; pointer-events: none; }
+    .tag.l { left: 12px; } .tag.r { right: 12px; }
+    .grid { position: absolute; inset: 0; pointer-events: none; display: none; }
+    .grid.on { display: block; }
+    .legend { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--on-surface-var); margin-top: 10px; }
+    .legend .bar { flex: 1; height: 8px; border-radius: 4px; background: linear-gradient(90deg,#a50026,#d73027,#f46d43,#fdae61,#fee08b,#ffffbf,#d9ef8b,#a6d96a,#66bd63,#1a9850,#006837); }
+    h2 { font-size: 18px; font-weight: 500; margin: 0 0 12px; }
+    .stat { display: grid; grid-template-columns: 1fr auto; padding: 10px 0; border-bottom: 1px solid var(--outline-var); gap: 8px; }
+    .stat:last-child { border: 0; }
+    .stat b { font-weight: 500; }
+    .stat span { color: var(--on-surface-var); font-size: 13px; }
+    .big { font-size: 40px; line-height: 44px; font-weight: 400; color: var(--primary); }
+    .why { margin-top: 16px; }
+    .why li { margin-bottom: 8px; }
+    .src { font-size: 12px; color: var(--on-surface-var); margin-top: 12px; }
+    .rgbtoggle { margin-left: auto; }
+    .muted { color: var(--on-surface-var); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="icon-btn" href="./" aria-label="Back to map"><span class="ms">arrow_back</span></a>
+    <h1>Drone vs. satellite: the same field</h1>
+  </header>
+  <main>
+    <section class="card">
+      <div class="chips" id="sets">
+        <button class="chip" data-set="orchard" aria-pressed="true"><span class="ms">park</span>Orchard rows · 7 cm</button>
+        <button class="chip" data-set="field" aria-pressed="false"><span class="ms">grass</span>Row crop · 11.6 cm</button>
+      </div>
+      <div class="chips" id="tiers">
+        <button class="chip" data-tier="s10" aria-pressed="true">vs 10 m (Sentinel-2, free)</button>
+        <button class="chip" data-tier="s3" aria-pressed="false">vs 3 m (PlanetScope, paid)</button>
+        <button class="chip" data-tier="rgb" aria-pressed="false">vs true color</button>
+        <button class="chip rgbtoggle" id="gridBtn" aria-pressed="false"><span class="ms">grid_on</span>10 m pixel grid</button>
+      </div>
+      <div class="viewer" id="viewer">
+        <img id="base" alt="Drone NDVI" draggable="false" />
+        <div class="top"><img id="over" alt="Coarser resolution NDVI" draggable="false" /></div>
+        <svg class="grid" id="grid" preserveAspectRatio="none"></svg>
+        <div class="handle"></div>
+        <span class="tag l" id="tagL">Drone · 7 cm</span>
+        <span class="tag r" id="tagR">Satellite · 10 m</span>
+      </div>
+      <div class="legend"><span>NDVI 0</span><span class="bar"></span><span>0.9</span></div>
+      <p class="src">Drag across the image. Drone imagery: MicaSense RedEdge sample data (<a href="https://sample.micasense.com/" target="_blank" rel="noopener">sample.micasense.com</a>), 4-band reflectance. The 3 m and 10 m views average the drone's own NDVI into 3 m and 10 m squares, which is what a satellite pixel records over the same ground.</p>
+    </section>
+    <aside class="card">
+      <h2>What each pixel sees</h2>
+      <div class="big" id="ratio">20,408×</div>
+      <span class="muted">more detail per area from the drone than from the free satellite</span>
+      <div style="margin-top:12px">
+        <div class="stat"><b>Drone</b><span id="sDrone"></span></div>
+        <div class="stat"><b>PlanetScope (3 m)</b><span id="sP"></span></div>
+        <div class="stat"><b>Sentinel-2 (10 m)</b><span id="sS"></span></div>
+        <div class="stat"><b>Area</b><span id="sArea"></span></div>
+      </div>
+      <div class="why">
+        <h2>Why it matters</h2>
+        <ul>
+          <li><b>Satellite says where to look.</b> It's free, covers every farm every ~5 days, and that's what our map runs on.</li>
+          <li><b>Drone says what's wrong, plant by plant.</b> At 10 m a whole orchard row blurs into one pixel. At 7 cm you can count trees, find the sick one, and spot weed patches between rows.</li>
+          <li><b>Precision treatment.</b> A drone image lets a spray drone hit the affected rows instead of the whole field.</li>
+        </ul>
+      </div>
+    </aside>
+  </main>
+<script>
+  const $ = (s) => document.querySelector(s);
+  const state = { set: "orchard", tier: "s10", grid: false, meta: {} };
+  const fmt = (n) => n.toLocaleString("en-US");
+
+  async function load() {
+    for (const n of ["orchard", "field"]) state.meta[n] = await fetch(`img/${n}.json`).then((r) => r.json());
+    render();
+  }
+  function render() {
+    const m = state.meta[state.set];
+    $("#base").src = `img/${state.set}-drone.jpg`;
+    $("#over").src = `img/${state.set}-${state.tier}.jpg`;
+    $("#tagL").textContent = `Drone NDVI · ${m.cmPerPixel} cm`;
+    $("#tagR").textContent = state.tier === "rgb" ? "Drone true color" : state.tier === "s3" ? "PlanetScope-like · 3 m" : "Sentinel-2-like · 10 m";
+    $("#ratio").textContent = `${fmt(m.detailRatio)}×`;
+    $("#sDrone").textContent = `${m.cmPerPixel} cm/pixel · ${fmt(m.dronePixels)} pixels`;
+    $("#sP").textContent = `3 m/pixel · ${fmt(m.planet3m.pixels)} pixels`;
+    $("#sS").textContent = `10 m/pixel · ${fmt(m.satellite10m.pixels)} pixels`;
+    $("#sArea").textContent = `${m.widthM} × ${m.heightM} m · ${m.acres} acres`;
+    // 10 m grid in image units
+    const g = $("#grid");
+    g.setAttribute("viewBox", `0 0 ${m.widthM} ${m.heightM}`);
+    let lines = "";
+    for (let x = 10; x < m.widthM; x += 10) lines += `<line x1="${x}" y1="0" x2="${x}" y2="${m.heightM}"/>`;
+    for (let y = 10; y < m.heightM; y += 10) lines += `<line x1="0" y1="${y}" x2="${m.widthM}" y2="${y}"/>`;
+    g.innerHTML = `<g stroke="white" stroke-opacity=".85" stroke-width="${m.widthM / 900}">${lines}</g>`;
+    g.classList.toggle("on", state.grid);
+    for (const b of document.querySelectorAll("#sets .chip")) b.setAttribute("aria-pressed", b.dataset.set === state.set);
+    for (const b of document.querySelectorAll("#tiers .chip[data-tier]")) b.setAttribute("aria-pressed", b.dataset.tier === state.tier);
+    $("#gridBtn").setAttribute("aria-pressed", state.grid);
+  }
+  $("#sets").onclick = (e) => { const b = e.target.closest("[data-set]"); if (b) { state.set = b.dataset.set; render(); } };
+  $("#tiers").onclick = (e) => {
+    if (e.target.closest("#gridBtn")) { state.grid = !state.grid; return render(); }
+    const b = e.target.closest("[data-tier]"); if (b) { state.tier = b.dataset.tier; render(); }
+  };
+  const viewer = $("#viewer");
+  const setCut = (x) => {
+    const r = viewer.getBoundingClientRect();
+    viewer.style.setProperty("--cut", `${Math.max(0, Math.min(100, ((x - r.left) / r.width) * 100))}%`);
+  };
+  let dragging = false;
+  viewer.addEventListener("pointerdown", (e) => { e.preventDefault(); dragging = true; viewer.setPointerCapture(e.pointerId); setCut(e.clientX); });
+  viewer.addEventListener("pointermove", (e) => { if (dragging) setCut(e.clientX); });
+  viewer.addEventListener("pointerup", () => { dragging = false; });
+  viewer.addEventListener("pointercancel", () => { dragging = false; });
+  viewer.addEventListener("dragstart", (e) => e.preventDefault());
+  load();
+</script>
+</body>
+</html>

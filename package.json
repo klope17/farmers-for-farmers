@@ -1,0 +1,20 @@
+{
+  "name": "farmers-for-farmers",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Community crop-health map + texting agent. HackHarvard 2026.",
+  "scripts": {
+    "agent": "node --env-file-if-exists=agent/.env agent/server.js",
+    "web": "npx --yes serve web -l 5173",
+    "data": "python tools/build_data.py"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "@photon-ai/api": "0.5.0",
+    "spectrum-ts": "^12.11.0"
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+agent/.env
+agent/state.json
+__pycache__/
+
+# Private: pitch notes and event documents
+PITCH.md
+*.pdf

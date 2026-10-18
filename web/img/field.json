@@ -1,0 +1,27 @@
+{
+  "name": "field",
+  "source": "MicaSense RedEdge sample data (sample.micasense.com)",
+  "cmPerPixel": 11.6,
+  "widthM": 528.9,
+  "heightM": 218.3,
+  "acres": 28.53,
+  "imageSize": [
+    1600,
+    657
+  ],
+  "dronePixels": 8567692,
+  "satellite10m": {
+    "metres": 10,
+    "pixels": 1166
+  },
+  "planet3m": {
+    "metres": 3,
+    "pixels": 12672
+  },
+  "detailRatio": 7456,
+  "ndvi": {
+    "mean": 0.818,
+    "p5": 0.473,
+    "p95": 0.939
+  }
+}
